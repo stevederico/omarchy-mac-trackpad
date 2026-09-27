@@ -1,0 +1,5 @@
+# Installed by omarchy-mac-trackpad.
+# T2 internal trackpad is USB-emulated; force laptop (internal) palm detection.
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", \
+  ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="0340", ENV{ID_INPUT_TOUCHPAD}=="1", \
+  ENV{ID_INPUT_TOUCHPAD_INTEGRATION}="internal", ENV{ID_INTEGRATION}="internal"

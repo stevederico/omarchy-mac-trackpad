@@ -1,0 +1,5 @@
+# Installed by omarchy-mac-trackpad.
+# T2 presents the internal trackpad over virtual USB, so udev classifies
+# it as external and libinput skips laptop palm-edge detection.
+touchpad:usb:v05acp0340:*
+ ID_INPUT_TOUCHPAD_INTEGRATION=internal

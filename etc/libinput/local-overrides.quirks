@@ -1,0 +1,18 @@
+# Ignore light accidental contacts on the MacBookPro16,1 T2 trackpad.
+# Default Apple USB quirks use AttrTouchSizeRange=150:130, which is low
+# enough that a graze still moves the cursor. Values are raw
+# ABS_MT_TOUCH_MAJOR/MINOR units (device range 0-5000).
+#
+# A resting thumb is otherwise a second finger, so libinput starts 2fg
+# scroll and the pointer freezes. Size-based thumb (between the graze
+# floor and the T2 palm threshold) keeps that contact out of 2fg.
+# Palm 1600 is the upstream Apple USB value.
+# udev already sets ID_INPUT_TOUCHPAD_INTEGRATION=internal for 05ac:0340.
+[MacBookPro16,1 T2 Trackpad]
+MatchName=*Apple Internal Keyboard / Trackpad*
+MatchUdevType=touchpad
+MatchDMIModalias=dmi:*svnAppleInc.:pnMacBookPro16,1*
+AttrSizeHint=160x100
+AttrTouchSizeRange=300:240
+AttrThumbSizeThreshold=1100
+AttrPalmSizeThreshold=1600
