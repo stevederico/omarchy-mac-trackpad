@@ -26,9 +26,11 @@ hl.config({
 -- early gets extrapolated, and typical finger motion on this pad is 2-30
 -- units/ms, so a short curve makes flicks explode.
 --
--- Pointer curve is xuanping.trackpad's macOS pack, retargeted to this
--- T2 device. Crawl kept (~0.10x). Flick cap ~1.15x. The last two points
--- hold that slope past 10.5 units/ms. Scroll stays 1:1.
+-- Pointer curve: first 14 points from xuanping.trackpad
+-- (https://github.com/lxp-git/omarchy-trackpad, MIT, Copyright (c) 2026
+-- xuanping), retargeted to this T2 device. Crawl kept (~0.10x). The rest
+-- of the curve is new: flick cap ~1.15x, and the last two points hold that
+-- slope past 10.5 units/ms. Scroll stays 1:1.
 --
 -- The name must match your device. Check with: hyprctl devices
 hl.device({

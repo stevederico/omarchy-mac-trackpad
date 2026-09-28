@@ -46,9 +46,11 @@ parse_args() {
   fi
 }
 
-# Drop our block from a file. Remove the file when nothing else is left.
+# remove_block <file> <user|root> <staged path> [keep]
+# Drop our block from a file. Remove the file when nothing else is left,
+# unless "keep" is passed: then the file stays, even if empty.
 remove_block() {
-  local dst=$1 owner=$2 staged=$3
+  local dst=$1 owner=$2 staged=$3 keep=${4:-}
   if ! has_block "$dst"; then
     if [[ $MODE == plan ]]; then
       say "  no block   $dst"
@@ -56,7 +58,7 @@ remove_block() {
     return 0
   fi
   strip_block "$dst" >"$staged"
-  if has_content "$staged"; then
+  if [[ -n $keep ]] || has_content "$staged"; then
     write_file "$staged" "$dst" "$owner"
   else
     remove_file "$dst" "$owner"
@@ -78,7 +80,8 @@ remove_owned() {
 do_hypr() {
   say "Hyprland (~/.config/hypr):"
   # Drop the require lines first so Hyprland never loads a missing module.
-  remove_block "$HYPR_MAIN" user "$STAGE/hyprland.lua"
+  # hyprland.lua is Hyprland's main config, so it is never deleted.
+  remove_block "$HYPR_MAIN" user "$STAGE/hyprland.lua" keep
   remove_file "$HYPR_SNIPPET" user
   remove_file "$HYPR_OPTIONAL" user
 }
@@ -116,6 +119,7 @@ main() {
   fi
   sudo_notice
   confirm || die "aborted. Nothing was changed."
+  sudo_preflight
   say ""
 
   MODE=apply

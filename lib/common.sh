@@ -55,11 +55,11 @@ die() {
 
 init() {
   local cmd
-  for cmd in awk cmp cp diff grep install mktemp rm sed; do
+  for cmd in awk cmp cp diff grep install mktemp rm sed tail; do
     command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
   done
   if [[ $EUID -eq 0 && -z $ROOT ]]; then
-    die "run this as your own user. sudo is called only for the /etc files."
+    die "run this as your own user. sudo is called only for the /etc files and the udev reload."
   fi
   STAGE=$(mktemp -d)
   trap 'rm -rf "$STAGE"' EXIT
@@ -152,14 +152,53 @@ remove_file() {
   say "  removed    $dst"
 }
 
-# Print a file without the block this tool manages.
+# Marks a block whose preceding newline was added by install.sh, because
+# the file did not end in one. strip_block takes that newline back out.
+NOEOL_TAG="(added final newline above)"
+
+# Print a file without the block this tool manages. A missing final
+# newline is kept missing, so install then uninstall gives back the file
+# byte for byte.
 strip_block() {
-  [[ -f $1 ]] || return 0
-  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
-    index($0, b) { skip = 1; next }
-    index($0, e) { skip = 0; next }
-    !skip { print }
-  ' "$1"
+  local file=$1 eol=1
+  [[ -f $file ]] || return 0
+  if [[ -s $file && -n $(tail -c1 "$file") ]]; then
+    eol=0
+  fi
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v tag="$NOEOL_TAG" -v eol="$eol" '
+    index($0, b) { skip = 1; if (index($0, tag)) added = 1; next }
+    index($0, e) { skip = 0; ended = 1; next }
+    skip { next }
+    {
+      if (n++) printf "\n"
+      printf "%s", $0
+      last = NR
+      after = ended
+    }
+    END {
+      if (!n) exit
+      if (last == NR && !eol) exit
+      if (added && !after) exit
+      printf "\n"
+    }
+  ' "$file"
+}
+
+# with_block <file> <comment prefix> <body file>
+# Print <file> with our block, holding the lines of <body file>, at the end.
+with_block() {
+  local file=$1 c=$2 body=$3 rest begin=$MARK_BEGIN
+  rest=$(mktemp -p "$STAGE")
+  strip_block "$file" >"$rest"
+  cat "$rest"
+  if [[ -s $rest && -n $(tail -c1 "$rest") ]]; then
+    printf '\n'
+    begin="$MARK_BEGIN $NOEOL_TAG"
+  fi
+  say "$c $begin"
+  say "$c Managed by $NAME. Remove with its uninstall.sh."
+  cat "$body"
+  say "$c $MARK_END"
 }
 
 has_block() {
@@ -182,7 +221,16 @@ confirm() {
 
 sudo_notice() {
   if [[ $SYSTEM_CHANGED -eq 1 && -z $ROOT && $EUID -ne 0 ]]; then
-    say "sudo is used for the /etc files only. You may be asked for your password."
+    say "sudo is used only for the /etc files and the udev/hwdb reload. You may be asked for your password."
+  fi
+}
+
+# Get sudo before the first write, so a wrong password or a missing sudo
+# stops here instead of after the Hyprland files are already changed.
+sudo_preflight() {
+  if [[ $SYSTEM_CHANGED -eq 1 && -z $ROOT && $EUID -ne 0 ]]; then
+    command -v sudo >/dev/null 2>&1 || die "sudo not found. Nothing was changed."
+    sudo -v || die "sudo failed. Nothing was changed."
   fi
 }
 

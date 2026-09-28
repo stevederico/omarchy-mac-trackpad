@@ -90,6 +90,10 @@ detect_usb_id() {
 }
 
 # T2 trackpad USB product ids from the kernel (hid-ids.h, WELLSPRINGT2_*).
+# 0278 is WELLSPRINGT2_J680_ALT, found on some MacBookPro15,1 units.
+T2_USB_IDS=(027a 027b 027c 027d 027e 027f 0278 0280 0340)
+
+# Default trackpad id for a model, used when the live device is not found.
 known_usb_id() {
   case "$1" in
     MacBookAir8,1) echo 027a ;;
@@ -102,6 +106,14 @@ known_usb_id() {
     MacBookPro16,1) echo 0340 ;;
     *) return 1 ;;
   esac
+}
+
+is_t2_usb_id() {
+  local id
+  for id in "${T2_USB_IDS[@]}"; do
+    [[ $1 == "$id" ]] && return 0
+  done
+  return 1
 }
 
 resolve_target() {
@@ -126,6 +138,9 @@ resolve_target() {
     die "this machine is '$MODEL', not a MacBook. The /etc files only match Apple T2 trackpads. Use --hypr-only for the Hyprland part."
   fi
   [[ $USB_ID =~ ^[0-9a-f]{4}$ ]] || die "could not find the trackpad USB product id for $MODEL. Pass --usb-id (see README)."
+  if ! is_t2_usb_id "$USB_ID"; then
+    die "$MODEL trackpad 05ac:$USB_ID is not a known T2 trackpad id. The /etc files only fit T2 MacBooks. Use --hypr-only for the Hyprland part."
+  fi
   if [[ $FORCE -ne 1 ]]; then
     die "$MODEL (trackpad 05ac:$USB_ID) is untested. The values were tuned on $TESTED_MODEL. Re-run with --force to install them matched to this model, or --hypr-only to skip /etc."
   fi
@@ -149,33 +164,26 @@ render() {
 
 stage_hypr_main() {
   {
-    strip_block "$HYPR_MAIN"
-    say "-- $MARK_BEGIN"
-    say "-- Managed by $NAME. Remove with its uninstall.sh."
     say 'require("hypr.mac-trackpad")'
     if [[ $WITH_OPTIONAL -eq 1 ]]; then
       say 'require("hypr.mac-trackpad-optional")'
     fi
-    say "-- $MARK_END"
-  } >"$STAGE/hyprland.lua"
+  } >"$STAGE/hyprland.block"
+  with_block "$HYPR_MAIN" "--" "$STAGE/hyprland.block" >"$STAGE/hyprland.lua"
 }
 
 stage_quirks() {
-  render "$HERE/etc/libinput/local-overrides.quirks" "$STAGE/quirks.section"
-  strip_block "$QUIRKS_DST" >"$STAGE/quirks.rest"
-  if [[ $MODE == plan ]] && grep -qF "Apple Internal Keyboard / Trackpad" "$STAGE/quirks.rest"; then
+  if [[ $MODE == plan ]] && strip_block "$QUIRKS_DST" | grep -qF "Apple Internal Keyboard / Trackpad"; then
     warn "$QUIRKS_DST already has its own section for this trackpad. Ours is added after it and wins where both set a value."
   fi
+  render "$HERE/etc/libinput/local-overrides.quirks" "$STAGE/quirks.section"
   {
-    cat "$STAGE/quirks.rest"
-    say "# $MARK_BEGIN"
-    say "# Managed by $NAME. Remove with its uninstall.sh."
     if [[ $TESTED -ne 1 ]]; then
       say "# Untested on this model. Thresholds were tuned on $TESTED_MODEL."
     fi
     cat "$STAGE/quirks.section"
-    say "# $MARK_END"
-  } >"$STAGE/local-overrides.quirks"
+  } >"$STAGE/quirks.block"
+  with_block "$QUIRKS_DST" "#" "$STAGE/quirks.block" >"$STAGE/local-overrides.quirks"
 }
 
 do_hypr() {
@@ -242,6 +250,7 @@ main() {
   fi
   sudo_notice
   confirm || die "aborted. Nothing was changed."
+  sudo_preflight
   say ""
 
   MODE=apply

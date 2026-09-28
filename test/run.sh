@@ -2,8 +2,8 @@
 # End-to-end test for install.sh and uninstall.sh.
 #
 # Runs both scripts for real, but only against a throwaway HOME and a fake
-# /etc root (MAC_TRACKPAD_ROOT). Never touches the live system, never uses
-# sudo, never reloads udev.
+# /etc root (MAC_TRACKPAD_ROOT). Never writes to the live system, never runs
+# the real sudo, never reloads udev. The sudo failure test uses a fake sudo.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -133,6 +133,41 @@ check_not "rules removed" test -e "$ETC/udev/rules.d/71-apple-t2-trackpad.rules"
 uninstall --yes >"$SANDBOX/out"
 check "second uninstall reports nothing to do" grep -q "Nothing to do" "$SANDBOX/out"
 
+echo "== hyprland.lua is never deleted"
+reset
+: >"$HYPR/hyprland.lua"
+install --yes --hypr-only >/dev/null
+check "empty hyprland.lua gets the block" grep -qF 'require("hypr.mac-trackpad")' "$HYPR/hyprland.lua"
+uninstall --yes --hypr-only >/dev/null
+check "hyprland.lua kept after uninstall" test -f "$HYPR/hyprland.lua"
+check "hyprland.lua back to empty" test ! -s "$HYPR/hyprland.lua"
+
+echo "== missing final newline"
+reset
+printf '%s\n%s' '-- user config' 'require("hypr.input")' >"$HYPR/hyprland.lua"
+cp "$HYPR/hyprland.lua" "$SANDBOX/hyprland.noeol"
+mkdir -p "$ETC/libinput"
+printf '%s\n%s' '[Other Mouse]' 'MatchName=*Some Mouse*' >"$ETC/libinput/local-overrides.quirks"
+cp "$ETC/libinput/local-overrides.quirks" "$SANDBOX/quirks.noeol"
+install --yes "${MBP[@]}" >/dev/null
+check "last user line stays whole" grep -qxF 'require("hypr.input")' "$HYPR/hyprland.lua"
+check "block starts on its own line" grep -qx -- '-- >>> omarchy-mac-trackpad >>>.*' "$HYPR/hyprland.lua"
+check "last quirks line stays whole" grep -qxF 'MatchName=*Some Mouse*' "$ETC/libinput/local-overrides.quirks"
+cp "$HYPR/hyprland.lua" "$SANDBOX/hyprland.installed"
+install --yes "${MBP[@]}" >"$SANDBOX/out"
+check "no-newline install is idempotent" grep -q "Already installed" "$SANDBOX/out"
+check "no-newline second run leaves hyprland.lua alone" cmp -s "$HYPR/hyprland.lua" "$SANDBOX/hyprland.installed"
+uninstall --yes >/dev/null
+check "no-newline hyprland.lua restored byte for byte" cmp -s "$HYPR/hyprland.lua" "$SANDBOX/hyprland.noeol"
+check "no-newline quirks restored byte for byte" cmp -s "$ETC/libinput/local-overrides.quirks" "$SANDBOX/quirks.noeol"
+
+echo "== lines added after the block"
+install --yes --hypr-only >/dev/null
+printf '%s\n' '-- added later' >>"$HYPR/hyprland.lua"
+uninstall --yes --hypr-only >/dev/null
+printf '%s\n%s\n%s\n' '-- user config' 'require("hypr.input")' '-- added later' >"$SANDBOX/hyprland.later"
+check "later lines kept, each on its own line" cmp -s "$HYPR/hyprland.lua" "$SANDBOX/hyprland.later"
+
 echo "== existing files are kept"
 reset
 mkdir -p "$ETC/libinput" "$ETC/udev/rules.d"
@@ -180,6 +215,17 @@ check "rules use the model's usb id" grep -qF 'ENV{ID_MODEL_ID}=="027c"' "$ETC/u
 check_not "no tested id left behind" grep -rq '0340' "$ETC"
 
 reset
+install --yes --force --model "MacBookPro15,1" --usb-id 0278 >/dev/null 2>&1
+check "alt MacBookPro15,1 id 0278 accepted" grep -qF 'touchpad:usb:v05acp0278:*' "$ETC/udev/hwdb.d/71-apple-t2-trackpad.hwdb"
+
+reset
+check_not "non-T2 MacBook refuses even with --force" install --yes --force --model "MacBookPro11,2" --usb-id 0262
+install --yes --model "MacBookPro11,2" --usb-id 0262 >/dev/null 2>"$SANDBOX/err" || true
+check "non-T2 refusal names the id" grep -q "not a known T2 trackpad id" "$SANDBOX/err"
+check_not "non-T2 refusal does not offer --force" grep -q -- "--force" "$SANDBOX/err"
+check_not "non-T2 refusal creates no /etc" test -e "$ETC"
+
+reset
 check_not "non-MacBook refuses the /etc part" install --yes --force --model "OptiPlex 7050"
 check_not "non-MacBook refusal creates no /etc" test -e "$ETC"
 check "non-MacBook can use --hypr-only" install --yes --hypr-only --model "OptiPlex 7050"
@@ -190,6 +236,26 @@ rm "$HYPR/hyprland.lua"
 check_not "install fails without hyprland.lua" install --yes "${MBP[@]}"
 check_not "failure creates no /etc" test -e "$ETC"
 check "--system-only works without hyprland.lua" install --yes --system-only "${MBP[@]}"
+
+echo "== failed sudo changes nothing"
+# Real paths, no fake root, but a fake sudo that refuses. Nothing can be
+# written to /etc as a normal user, and the fake sudo does nothing.
+if [[ $EUID -eq 0 ]]; then
+  echo "note: skipped, needs a normal user"
+else
+  reset
+  mkdir -p "$SANDBOX/bin"
+  # shellcheck disable=SC2016  # expands when the fake sudo runs
+  printf '%s\n' '#!/bin/sh' 'echo "$*" >>"$SUDO_LOG"' 'exit 1' >"$SANDBOX/bin/sudo"
+  chmod +x "$SANDBOX/bin/sudo"
+  export SUDO_LOG="$SANDBOX/sudo.log"
+  : >"$SUDO_LOG"
+  check_not "install stops when sudo fails" env -u MAC_TRACKPAD_ROOT PATH="$SANDBOX/bin:$PATH" "$REPO/install.sh" --yes "${MBP[@]}"
+  check "only sudo -v was tried" test "$(cat "$SUDO_LOG")" = "-v"
+  check "hyprland.lua untouched after sudo failure" cmp -s "$HYPR/hyprland.lua" "$SANDBOX/hyprland.orig"
+  check_not "no snippet after sudo failure" test -e "$HYPR/mac-trackpad.lua"
+  check_not "no backups after sudo failure" test -e "$BACKUPS"
+fi
 
 echo
 echo "$PASS passed, $FAIL failed"

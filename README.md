@@ -18,10 +18,11 @@ Out of the box the T2 trackpad works, but a graze moves the cursor, a resting th
 
 | Model | Machine | Trackpad USB id | Status |
 |-------|---------|-----------------|--------|
-| MacBookPro16,1 | 16-inch, 2019 | 05ac:0340 | Tested. Daily driver. |
+| MacBookPro16,1 | 16-inch, 2019 | 05ac:0340 | Values tested daily. Installer untested on hardware. |
 | MacBookPro16,2 | 13-inch, 2020, four ports | 05ac:027e | Untested |
 | MacBookPro16,3 | 13-inch, 2020, two ports | 05ac:027f | Untested |
 | MacBookPro15,1 | 15-inch, 2018 and 2019 | 05ac:027c | Untested |
+| MacBookPro15,1 (some units) | 15-inch, 2018 and 2019 | 05ac:0278 | Untested |
 | MacBookPro15,2 | 13-inch, 2018 and 2019, four ports | 05ac:027b | Untested |
 | MacBookPro15,4 | 13-inch, 2019, two ports | 05ac:027d | Untested |
 | MacBookAir8,1 | 2018 | 05ac:027a | Untested |
@@ -31,7 +32,7 @@ Every value here was tuned on one MacBookPro16,1. The USB ids come from the Linu
 
 On any other T2 model the installer stops unless you pass `--force`. With `--force` it rewrites the matches to your model and your trackpad's USB id, which it reads from the live device, and drops the 16-inch size hint. The thresholds stay the same. They are a starting point on a smaller pad, not a promise. T2 models missing from the table (MacBookPro15,3, MacBookPro16,4, MacBookAir8,2) work the same way.
 
-Not for Apple Silicon Macs or for Intel Macs without a T2 chip. Their trackpads are not USB and already count as internal. The Hyprland part still works there with `--hypr-only`.
+Not for Apple Silicon Macs or for Intel Macs without a T2 chip. Older Intel MacBooks also have USB trackpads, but with ids that are not in the T2 list above, so the installer refuses the `/etc` part there even with `--force`. The Hyprland part still works with `--hypr-only`.
 
 ## Requirements
 
@@ -47,7 +48,7 @@ cd omarchy-mac-trackpad
 ./install.sh
 ```
 
-The installer prints a diff of every file it will touch, then asks. Run it as your own user. It calls `sudo` itself, and only for the three files under `/etc`.
+The installer prints a diff of every file it will touch, then asks. Run it as your own user. It calls `sudo` itself, and only for the three files under `/etc` and the udev/hwdb reload. It asks for the sudo password before writing anything, so a failed sudo cannot leave a half install.
 
 Reboot afterwards. libinput reads its quirks only when the compositor starts, so a Hyprland reload is not enough for the `/etc` part.
 
@@ -63,6 +64,8 @@ Reboot afterwards. libinput reads its quirks only when the compositor starts, so
 | `--force` | Install the `/etc` part on an untested model. |
 
 Running it again is safe. If nothing differs it says so and stops. The install always matches the flags you pass, so running it again without `--with-optional` removes the optional values.
+
+After `omarchy-refresh-hyprland`, run `./install.sh` again. That command resets `~/.config/hypr/hyprland.lua` to the Omarchy default, which drops the `require` lines this tool added.
 
 ## What it changes
 
@@ -88,7 +91,7 @@ If your own `input.lua` already has a three-finger workspace gesture or browser 
 ./uninstall.sh
 ```
 
-This removes the marked blocks and the files the installer created. Anything else in `hyprland.lua` or the quirks file stays. udev files with the same name that this tool did not install are left alone unless you pass `--force`.
+This removes the marked blocks and the files the installer created. Anything else in `hyprland.lua` or the quirks file stays, byte for byte. `hyprland.lua` itself is never deleted, even if the block was all it held. udev files with the same name that this tool did not install are left alone unless you pass `--force`.
 
 ## What each setting does
 
@@ -137,6 +140,12 @@ The curve is attached to the device by name: `apple-inc.-apple-internal-keyboard
 
 ## Check that it worked
 
+The `libinput` debug commands need the debug tools:
+
+```bash
+sudo pacman -S libinput-tools python-libevdev python-pyudev
+```
+
 ```bash
 # Find the trackpad's event node
 sudo libinput list-devices | grep -A1 -i trackpad
@@ -171,8 +180,20 @@ shellcheck -x install.sh uninstall.sh lib/common.sh test/run.sh
 ./test/run.sh
 ```
 
-`test/run.sh` runs the real install and uninstall against a throwaway home directory and a fake `/etc`. It never touches the live system, never uses sudo, and never reloads udev.
+`test/run.sh` runs the real install and uninstall against a throwaway home directory and a fake `/etc`. It never writes to the live system, never runs the real sudo, and never reloads udev. The sudo failure test puts a fake `sudo` first in `PATH`.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Credits
+
+The first 14 points of the optional pointer curve come from `MACOS_ACCEL` in `lib/trackpad.py` of [xuanping.trackpad](https://github.com/lxp-git/omarchy-trackpad), used under the MIT License:
+
+> Copyright (c) 2026 xuanping
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
