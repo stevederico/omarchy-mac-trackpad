@@ -10,6 +10,8 @@ TESTED_MODEL="MacBookPro16,1"
 TESTED_USB_ID="0340"
 
 WITH_OPTIONAL=0
+WITH_GESTURE=1
+SWIPE_FILE=""
 FORCE=0
 MODEL=""
 USB_ID=""
@@ -165,6 +167,9 @@ render() {
 stage_hypr_main() {
   {
     say 'require("hypr.mac-trackpad")'
+    if [[ $WITH_GESTURE -eq 1 ]]; then
+      say 'require("hypr.mac-trackpad-gesture")'
+    fi
     if [[ $WITH_OPTIONAL -eq 1 ]]; then
       say 'require("hypr.mac-trackpad-optional")'
     fi
@@ -186,15 +191,55 @@ stage_quirks() {
   with_block "$QUIRKS_DST" "#" "$STAGE/quirks.block" >"$STAGE/local-overrides.quirks"
 }
 
+# Print the first file in ~/.config/hypr, other than ours, that already
+# defines a three-finger horizontal gesture without mods. Hyprland reports
+# a second identical gesture as a config error, so ours is skipped then.
+own_swipe_file() {
+  local f
+  for f in "$HYPR_DIR"/*.lua; do
+    [[ -f $f ]] || continue
+    case "$f" in
+      "$HYPR_SNIPPET" | "$HYPR_OPTIONAL" | "$HYPR_GESTURE") continue ;;
+    esac
+    if awk '
+      { sub(/--.*/, ""); s = s " " $0 }
+      END {
+        while (match(s, /hl\.gesture[ \t]*\([ \t]*\{[^}]*\}/)) {
+          call = substr(s, RSTART, RLENGTH)
+          if (call ~ /fingers[ \t]*=[ \t]*3[^0-9]/ && call ~ /"horizontal"/ && call !~ /mods[ \t]*=/) exit 0
+          s = substr(s, RSTART + RLENGTH)
+        }
+        exit 1
+      }
+    ' "$f"; then
+      printf '%s\n' "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
 do_hypr() {
   say "Hyprland (~/.config/hypr):"
   [[ -f $HYPR_MAIN ]] || die "$HYPR_MAIN not found. This needs Omarchy 4 or newer (Hyprland Lua config). Use --system-only for the /etc part."
+  WITH_GESTURE=1
+  if SWIPE_FILE=$(own_swipe_file); then
+    WITH_GESTURE=0
+  fi
   write_file "$HERE/hypr/mac-trackpad.lua" "$HYPR_SNIPPET" user
+  if [[ $WITH_GESTURE -eq 1 ]]; then
+    write_file "$HERE/hypr/mac-trackpad-gesture.lua" "$HYPR_GESTURE" user
+  elif [[ $MODE == plan ]]; then
+    say "  skip       three-finger swipe (already set in $SWIPE_FILE)"
+  fi
   if [[ $WITH_OPTIONAL -eq 1 ]]; then
     write_file "$HERE/hypr/mac-trackpad-optional.lua" "$HYPR_OPTIONAL" user
   fi
   stage_hypr_main
   write_file "$STAGE/hyprland.lua" "$HYPR_MAIN" user
+  if [[ $WITH_GESTURE -ne 1 ]]; then
+    remove_file "$HYPR_GESTURE" user
+  fi
   if [[ $WITH_OPTIONAL -ne 1 ]]; then
     remove_file "$HYPR_OPTIONAL" user
   fi

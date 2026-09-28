@@ -36,6 +36,6 @@ o.window({ tag = "chromium-based-browser" }, { scroll_touchpad = 0.1 })
 o.window({ tag = "firefox-based-browser" }, { scroll_touchpad = 0.1 })
 o.window(".*[Bb]rave.*", { scroll_touchpad = 0.1 })
 
--- Three-finger horizontal swipe: macOS swipe between desktops.
--- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Gestures/
-hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
+-- The three-finger swipe lives in mac-trackpad-gesture.lua. install.sh
+-- skips it when your config already has one, because Hyprland reports a
+-- second identical gesture as a config error.

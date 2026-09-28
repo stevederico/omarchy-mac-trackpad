@@ -18,7 +18,7 @@ Out of the box the T2 trackpad works, but a graze moves the cursor, a resting th
 
 | Model | Machine | Trackpad USB id | Status |
 |-------|---------|-----------------|--------|
-| MacBookPro16,1 | 16-inch, 2019 | 05ac:0340 | Values tested daily. Installer untested on hardware. |
+| MacBookPro16,1 | 16-inch, 2019 | 05ac:0340 | Tested. See below. |
 | MacBookPro16,2 | 13-inch, 2020, four ports | 05ac:027e | Untested |
 | MacBookPro16,3 | 13-inch, 2020, two ports | 05ac:027f | Untested |
 | MacBookPro15,1 | 15-inch, 2018 and 2019 | 05ac:027c | Untested |
@@ -29,6 +29,15 @@ Out of the box the T2 trackpad works, but a graze moves the cursor, a resting th
 | MacBookAir9,1 | 2020 | 05ac:0280 | Untested |
 
 Every value here was tuned on one MacBookPro16,1. The USB ids come from the Linux kernel (`WELLSPRINGT2_*` in `drivers/hid/hid-ids.h`).
+
+What "tested" means on the MacBookPro16,1:
+
+- The Hyprland values, the udev files, and all quirks except `AttrThumbSizeThreshold` are in daily use
+- `AttrThumbSizeThreshold=1100` has not been used day to day yet
+- The installer found the model and trackpad id by itself, and its dry run was correct
+- The test suite passed on the machine
+- Install then uninstall, run against copies of the machine's real files, gave back identical files
+- A real install into `/etc` on that machine has not been done yet
 
 On any other T2 model the installer stops unless you pass `--force`. With `--force` it rewrites the matches to your model and your trackpad's USB id, which it reads from the live device, and drops the 16-inch size hint. The thresholds stay the same. They are a starting point on a smaller pad, not a promise. T2 models missing from the table (MacBookPro15,3, MacBookPro16,4, MacBookAir8,2) work the same way.
 
@@ -72,6 +81,7 @@ After `omarchy-refresh-hyprland`, run `./install.sh` again. That command resets 
 | File | Change |
 |------|--------|
 | `~/.config/hypr/mac-trackpad.lua` | New file. |
+| `~/.config/hypr/mac-trackpad-gesture.lua` | New file, skipped if you already have a three-finger swipe. |
 | `~/.config/hypr/mac-trackpad-optional.lua` | New file, only with `--with-optional`. |
 | `~/.config/hypr/hyprland.lua` | A marked block of `require` lines added at the end. |
 | `/etc/libinput/local-overrides.quirks` | A marked block added. Other sections are kept. |
@@ -80,9 +90,9 @@ After `omarchy-refresh-hyprland`, run `./install.sh` again. That command resets 
 
 After writing the `/etc` files it runs `systemd-hwdb update` and `udevadm control --reload`.
 
-Every file that gets changed or replaced is copied first to `~/.local/state/omarchy-mac-trackpad/backups/<timestamp>/`.
+Every file that gets changed or replaced is copied first to `~/.local/state/omarchy-mac-trackpad/backups/<timestamp>.<pid>/`.
 
-If your own `input.lua` already has a three-finger workspace gesture or browser scroll rules, remove them there so they are not defined twice.
+If a file in `~/.config/hypr` already has a three-finger horizontal gesture, the installer leaves yours alone and skips its own. Hyprland reports two identical gestures as a config error. Browser scroll rules you already have are harmless, but you can drop them.
 
 ## Uninstall
 
@@ -91,7 +101,7 @@ If your own `input.lua` already has a three-finger workspace gesture or browser 
 ./uninstall.sh
 ```
 
-This removes the marked blocks and the files the installer created. Anything else in `hyprland.lua` or the quirks file stays, byte for byte. `hyprland.lua` itself is never deleted, even if the block was all it held. udev files with the same name that this tool did not install are left alone unless you pass `--force`.
+This removes the marked blocks and the files the installer created. Anything else in `hyprland.lua` or the quirks file stays, byte for byte. `hyprland.lua` itself is never deleted, even if the block was all it held. If install replaced udev files that were already there, uninstall puts them back from the backup. udev files with the same name that this tool did not install are left alone unless you pass `--force`.
 
 ## What each setting does
 
@@ -105,7 +115,7 @@ This removes the marked blocks and the files the installer created. Anything els
 | `natural_scroll` | `false` | Traditional direction. Set `true` for the macOS direction. |
 | `clickfinger_behavior` | `true` | Press with one, two, or three fingers for left, right, or middle click. No corner zones. |
 | `scroll_touchpad` (browser windows) | `0.1` | Chromium and Firefox scroll far too fast with a high-resolution Apple pad. This slows them down without touching other apps. |
-| three-finger gesture | horizontal, `workspace` | Swipe between workspaces like macOS desktops. |
+| three-finger gesture (`mac-trackpad-gesture.lua`) | horizontal, `workspace` | Swipe between workspaces like macOS desktops. |
 
 ### libinput: `etc/libinput/local-overrides.quirks`
 

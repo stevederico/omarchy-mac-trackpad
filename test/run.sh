@@ -90,6 +90,8 @@ echo "== install"
 reset
 install --yes "${MBP[@]}" >"$SANDBOX/out"
 check "snippet installed" cmp -s "$REPO/hypr/mac-trackpad.lua" "$HYPR/mac-trackpad.lua"
+check "gesture installed" cmp -s "$REPO/hypr/mac-trackpad-gesture.lua" "$HYPR/mac-trackpad-gesture.lua"
+check "hyprland.lua requires the gesture" grep -qF 'require("hypr.mac-trackpad-gesture")' "$HYPR/hyprland.lua"
 check_not "optional not installed by default" test -e "$HYPR/mac-trackpad-optional.lua"
 check "hyprland.lua requires the snippet" grep -qF 'require("hypr.mac-trackpad")' "$HYPR/hyprland.lua"
 check_not "hyprland.lua does not require optional" grep -qF 'mac-trackpad-optional' "$HYPR/hyprland.lua"
@@ -127,6 +129,7 @@ check "uninstall dry run keeps the snippet" test -e "$HYPR/mac-trackpad.lua"
 uninstall --yes >/dev/null
 check "hyprland.lua restored byte for byte" cmp -s "$HYPR/hyprland.lua" "$SANDBOX/hyprland.orig"
 check_not "snippet removed" test -e "$HYPR/mac-trackpad.lua"
+check_not "gesture removed" test -e "$HYPR/mac-trackpad-gesture.lua"
 check_not "quirks file removed when only ours" test -e "$ETC/libinput/local-overrides.quirks"
 check_not "hwdb removed" test -e "$ETC/udev/hwdb.d/71-apple-t2-trackpad.hwdb"
 check_not "rules removed" test -e "$ETC/udev/rules.d/71-apple-t2-trackpad.rules"
@@ -168,6 +171,27 @@ uninstall --yes --hypr-only >/dev/null
 printf '%s\n%s\n%s\n' '-- user config' 'require("hypr.input")' '-- added later' >"$SANDBOX/hyprland.later"
 check "later lines kept, each on its own line" cmp -s "$HYPR/hyprland.lua" "$SANDBOX/hyprland.later"
 
+echo "== user already has a three-finger swipe"
+reset
+printf '%s\n' 'hl.gesture({' '  fingers = 3,' '  direction = "horizontal",' '  action = "workspace",' '})' >"$HYPR/input.lua"
+install --yes --hypr-only >"$SANDBOX/out"
+check "own swipe is reported" grep -q "skip .*three-finger swipe" "$SANDBOX/out"
+check_not "gesture file skipped" test -e "$HYPR/mac-trackpad-gesture.lua"
+check_not "gesture not required" grep -qF 'mac-trackpad-gesture' "$HYPR/hyprland.lua"
+check "snippet still installed" test -e "$HYPR/mac-trackpad.lua"
+install --yes --hypr-only >"$SANDBOX/out"
+check "own swipe install is idempotent" grep -q "Already installed" "$SANDBOX/out"
+printf '%s\n' '-- hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })' >"$HYPR/input.lua"
+install --yes --hypr-only >/dev/null
+check "commented-out swipe does not count" test -e "$HYPR/mac-trackpad-gesture.lua"
+printf '%s\n' 'hl.gesture({ fingers = 3, direction = "horizontal", mods = "SUPER", action = "workspace" })' 'hl.gesture({ fingers = 4, direction = "horizontal", action = "workspace" })' >"$HYPR/input.lua"
+install --yes --hypr-only >/dev/null
+check "swipes with mods or other fingers do not count" test -e "$HYPR/mac-trackpad-gesture.lua"
+printf '%s\n' 'hl.gesture({ direction = "horizontal", fingers = 3, action = "workspace" })' >"$HYPR/input.lua"
+install --yes --hypr-only >/dev/null
+check_not "swipe added later removes ours" test -e "$HYPR/mac-trackpad-gesture.lua"
+check_not "swipe added later drops the require" grep -qF 'mac-trackpad-gesture' "$HYPR/hyprland.lua"
+
 echo "== existing files are kept"
 reset
 mkdir -p "$ETC/libinput" "$ETC/udev/rules.d"
@@ -178,8 +202,13 @@ install --yes "${MBP[@]}" >/dev/null
 check "quirks keep the other section" grep -qF '[Other Mouse]' "$ETC/libinput/local-overrides.quirks"
 check "quirks gain our section" grep -qF '[MacBookPro16,1 T2 Trackpad]' "$ETC/libinput/local-overrides.quirks"
 check "replaced rules file was backed up" test -n "$(find "$BACKUPS" -name '71-apple-t2-trackpad.rules' -print -quit)"
+install --yes "${MBP[@]}" >/dev/null
+uninstall --dry-run >"$SANDBOX/out"
+check "uninstall plans to restore the replaced file" grep -q "restore .*71-apple-t2-trackpad.rules" "$SANDBOX/out"
 uninstall --yes >/dev/null
 check "quirks restored byte for byte" cmp -s "$ETC/libinput/local-overrides.quirks" "$SANDBOX/quirks.orig"
+check "replaced rules file put back" grep -qxF '# hand written' "$ETC/udev/rules.d/71-apple-t2-trackpad.rules"
+check_not "hwdb that was not there before is removed" test -e "$ETC/udev/hwdb.d/71-apple-t2-trackpad.hwdb"
 
 echo "== uninstall leaves udev files it did not install"
 reset
@@ -204,9 +233,10 @@ check "symlink target restored" cmp -s "$SANDBOX/dotfiles/hyprland.lua" "$SANDBO
 
 echo "== other models"
 reset
-check_not "untested T2 model needs --force" install --yes --model MacBookPro15,1
+# Pass --usb-id: on a real T2 Mac the live trackpad id would win.
+check_not "untested T2 model needs --force" install --yes --model "MacBookPro15,1" --usb-id 027c
 check_not "refusal creates no /etc" test -e "$ETC"
-install --yes --force --model MacBookPro15,1 >/dev/null 2>&1
+install --yes --force --model "MacBookPro15,1" --usb-id 027c >/dev/null 2>&1
 check "quirks match the forced model" grep -qF 'pnMacBookPro15,1*' "$ETC/libinput/local-overrides.quirks"
 check_not "quirks drop the 16-inch size hint" grep -q '^AttrSizeHint=' "$ETC/libinput/local-overrides.quirks"
 check "quirks say untested" grep -q 'Untested on this model' "$ETC/libinput/local-overrides.quirks"

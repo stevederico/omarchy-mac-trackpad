@@ -22,6 +22,8 @@ HYPR_MAIN="$HYPR_DIR/hyprland.lua"
 HYPR_SNIPPET="$HYPR_DIR/mac-trackpad.lua"
 # shellcheck disable=SC2034
 HYPR_OPTIONAL="$HYPR_DIR/mac-trackpad-optional.lua"
+# shellcheck disable=SC2034
+HYPR_GESTURE="$HYPR_DIR/mac-trackpad-gesture.lua"
 
 # shellcheck disable=SC2034
 QUIRKS_DST="$ROOT/etc/libinput/local-overrides.quirks"
@@ -30,7 +32,9 @@ HWDB_DST="$ROOT/etc/udev/hwdb.d/71-apple-t2-trackpad.hwdb"
 # shellcheck disable=SC2034
 RULES_DST="$ROOT/etc/udev/rules.d/71-apple-t2-trackpad.rules"
 
-BACKUP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME/backups/$(date +%Y%m%d-%H%M%S)"
+BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/$NAME/backups"
+# One folder per run. The pid keeps two runs in the same second apart.
+BACKUP_DIR="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S).$$"
 
 # shellcheck disable=SC2034
 DRY_RUN=0

@@ -1,3 +1,11 @@
+0.3.0
+
+  Skip duplicate swipe
+  Restore replaced udev
+  Unique backup folders
+  Fix T2 test
+  Document T2 testing
+
 0.2.1
 
   Backfill 0.2.0 notes

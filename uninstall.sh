@@ -65,13 +65,37 @@ remove_block() {
   fi
 }
 
-# Remove a udev file only when install.sh put it there.
+# Print the oldest backup of <file> that this tool did not write: the
+# file as it was before the first install.
+original_backup() {
+  local dst=$1 dir
+  [[ -d $BACKUP_ROOT ]] || return 1
+  for dir in "$BACKUP_ROOT"/*/; do
+    if [[ -f $dir$dst ]] && ! grep -qF "$OWNED_TAG" "$dir$dst"; then
+      printf '%s\n' "$dir$dst"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Remove a udev file only when install.sh put it there. If install
+# replaced a file that was already there, put that file back instead.
 remove_owned() {
-  local dst=$1
+  local dst=$1 orig
   if [[ -f $dst && $FORCE -ne 1 ]] && ! grep -qF "$OWNED_TAG" "$dst"; then
     if [[ $MODE == plan ]]; then
       say "  kept       $dst (not installed by this tool, --force removes it)"
     fi
+    return 0
+  fi
+  if [[ -f $dst ]] && orig=$(original_backup "$dst"); then
+    if [[ $MODE == plan ]]; then
+      say "  restore    $dst from $orig"
+    fi
+    # Stage a copy, so the backup this run makes can never replace it.
+    cp "$orig" "$STAGE/restore"
+    write_file "$STAGE/restore" "$dst" root
     return 0
   fi
   remove_file "$dst" root
@@ -83,6 +107,7 @@ do_hypr() {
   # hyprland.lua is Hyprland's main config, so it is never deleted.
   remove_block "$HYPR_MAIN" user "$STAGE/hyprland.lua" keep
   remove_file "$HYPR_SNIPPET" user
+  remove_file "$HYPR_GESTURE" user
   remove_file "$HYPR_OPTIONAL" user
 }
 
